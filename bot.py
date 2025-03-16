@@ -1,79 +1,78 @@
-import telebot
-from telebot.types import ReplyKeyboardMarkup, KeyboardButton
+import logging
 import requests
-import config
-from quiz import QuizManager
-from yandex_gpt import YandexGPT, YandexGPTConfigManagerForAPIKey
+from aiogram import Bot, Dispatcher, Router
+from aiogram.types import Message
+from aiogram.fsm.storage.memory import MemoryStorage
+import asyncio
 
-bot = telebot.TeleBot(config.TELEGRAM_BOT_TOKEN)
-quiz_manager = QuizManager()
+# 🔑 Ваши ключи
+TELEGRAM_BOT_TOKEN = "---"  # Замените на ваш токен бота
+YANDEX_API_KEY = "---"  # Замените на ваш API-ключ Yandex
 
-config_yandex_gpt = {
-    "model_type": "yandex_gpt",
-    "catalog_id": config.YANDEX_CATALOG_ID,
-    "iam_token": config.YANDEX_IAM_TOKEN
-}
+# Логирование
+logging.basicConfig(level=logging.INFO)
 
-config = YandexGPTConfigManagerForAPIKey(model_type=config.YANDEX_MODEL_TYPE, 
-                                         catalog_id=config.YANDEX_CATALOG_ID, 
-                                         api_key=config.YANDEX_IAM_TOKEN)
-yandex_gpt = YandexGPT(config_manager=config)
+# 🧠 Функция для работы с Yandex GPT
+def get_gpt_response(prompt):
+    url = "https://llm.api.cloud.yandex.net/foundationModels/v1/completion"
+    headers = {
+        "Authorization": f"Api-Key {YANDEX_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    data = {
+        "modelUri": "gpt://---/yandexgpt-lite",
+        "messages": [{"role": "user", "text": prompt}],
+        "temperature": 0.7,
+        "maxTokens": 500,
+        "topP": 1
+    }
 
-# # Инициализируем БД
-# init_db()
-
-def get_gpt_response(prompt: str) -> str:
-    messages = [{"role": "user", "text": prompt}]
-    completion = yandex_gpt.get_sync_completion(messages=messages, 
-                                                temperature=0.5,
-                                                max_tokens=150)
-    return completion
-
-@bot.message_handler(commands=["start"])
-def start_handler(message):
-    bot.send_message(message.chat.id, "Привет! Напиши 'TEST' для начала теста или задай мне вопрос.")
-
-@bot.message_handler(func=lambda message: message.text.strip().upper() == "TEST")
-def start_quiz(message):
-    user_id = message.from_user.id
-    quiz_manager.start_quiz(user_id)
-    send_next_question(message)
-
-def send_next_question(message):
-    user_id = message.from_user.id
-    question_data = quiz_manager.get_next_question(user_id)
-
-    if question_data:
-        markup = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-        buttons = [KeyboardButton(str(i+1)) for i in range(4)]
-        markup.add(*buttons)
-
-        bot.send_message(message.chat.id, question_data["question"], reply_markup=markup)
+    # Отправка запроса к Yandex GPT
+    response = requests.post(url, json=data, headers=headers)
+    if response.status_code == 200:
+        try:
+            result = response.json()
+            logging.info(f"Ответ от Yandex GPT: {result}")  # Логируем полный ответ
+            # Извлекаем текст из структуры ответа
+            if "result" in result and "alternatives" in result["result"]:
+                return result["result"]["alternatives"][0]["message"]["text"]
+            else:
+                return "Не удалось обработать ответ Yandex GPT. Проверьте структуру ответа."
+        except Exception as e:
+            logging.error(f"Ошибка обработки ответа от Yandex GPT: {e}")
+            return "Произошла ошибка при обработке ответа от Yandex GPT."
     else:
+        logging.error(f"Ошибка Yandex GPT: {response.status_code} - {response.text}")
+        return "Произошла ошибка при обращении к Yandex GPT 😔"
 
-        bot.send_message(message.chat.id, "Тест завершен! Спасибо за участие.")
+# Инициализация бота и диспетчера
+bot = Bot(token=TELEGRAM_BOT_TOKEN)
+dp = Dispatcher(storage=MemoryStorage())
+router = Router()
 
+# Обработчик сообщений
+@router.message()
+async def handle_message(message: Message):
+    user_input = message.text.strip()  # Удаляем лишние пробелы
+    if not user_input:  # Проверяем, пустое ли сообщение
+        await message.answer("Сообщение не может быть пустым. Попробуйте снова!")
+        return
 
-@bot.message_handler(func=lambda message: message.text in ["1", "2", "3", "4"])
-def handle_answer(message):
-    user_id = message.from_user.id
-    quiz_manager.process_answer(user_id, message.text)
+    await message.answer("🤖 Думаю над ответом...")
+    try:
+        response = get_gpt_response(user_input)  # Запрашиваем ответ у Yandex GPT
+        await message.answer(response)
+    except Exception as e:
+        logging.error(f"Ошибка: {e}")
+        await message.answer("Произошла ошибка при обработке вашего сообщения 😥")
 
-    is_end = quiz_manager.is_end_of_test(user_id)
-    if is_end is None:
-        bot.send_message(message.chat.id, f"Тест завершен! Ваш результат: {quiz_manager.get_final_result(user_id)}")
-    else:
-        send_next_question(message)
+# Подключение роутера
+dp.include_router(router)
 
-
-@bot.message_handler(func=lambda message: True)
-def handle_message(message):
-    # this method is for AI Agent
-    user_input = message.text
-    bot.send_chat_action(message.chat.id, "typing")
-    response_text = get_gpt_response(user_input)
-    bot.send_message(message.chat.id, response_text)
-
+# Запуск бота
+async def main():
+    logging.info("Бот запущен 🚀")
+    await dp.start_polling(bot)
 
 if __name__ == "__main__":
-    bot.polling(none_stop=True)
+    asyncio.run(main())
