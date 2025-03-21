@@ -43,13 +43,18 @@ QUESTIONS = [
     {"question": "Меня охватывает сильное беспокойство, когда я думаю о своих делах и заботах", "options": ["1", "2", "3", "4"]}
 ]
 
+RT_SCALE_1 = {3, 4, 6, 7, 9, 12, 13, 14, 17, 18}
+RT_SCALE_2 = {1, 2, 5, 8, 10, 11, 15, 16, 19, 20}
+LT_SCALE_1 = {22, 23, 24, 25, 28, 29, 31, 32, 34, 35, 37, 38, 40}
+LT_SCALE_2 = {21, 26, 27, 30, 33, 36, 39}
+
 class QuizManager:
     def __init__(self):
         self.active_quizzes = {}
 
     def start_quiz(self, user_id):
         random.shuffle(QUESTIONS)
-        self.active_quizzes[user_id] = {"questions": QUESTIONS.copy(), "score": 0, "current": 0}
+        self.active_quizzes[user_id] = {"questions": QUESTIONS.copy(), "answers": {}, "current": 0}
 
     def get_next_question(self, user_id):
         quiz = self.active_quizzes.get(user_id)
@@ -62,21 +67,43 @@ class QuizManager:
         if quiz and quiz["current"] < len(quiz["questions"]):
             return False
         return True
-
-    def process_answer(self, user_id, answer_index):
+    
+    def process_answer(self, user_id, answer):
         quiz = self.active_quizzes.get(user_id)
         if not quiz:
             return None
         
-        # Dummy, todo
-        quiz["score"] += 1
-
+        question_index = quiz["current"] + 1
+        quiz["answers"][question_index] = int(answer) 
         quiz["current"] += 1
+
+    def calculate_scores(self, user_id):
+        quiz = self.active_quizzes.get(user_id)
+        if not quiz:
+            return None
+
+        answers = quiz["answers"]
+        
+        RT_1 = sum(answers[q] for q in RT_SCALE_1 if q in answers)
+        RT_2 = sum(answers[q] for q in RT_SCALE_2 if q in answers)
+        RT = RT_1 - RT_2 + 35
+
+        LT_1 = sum(answers[q] for q in LT_SCALE_1 if q in answers)
+        LT_2 = sum(answers[q] for q in LT_SCALE_2 if q in answers)
+        LT = LT_1 - LT_2 + 35
+        
+        return RT, LT
+    
+    def interpret_score(self, score):
+        if score <= 30:
+            return "Низкий уровень!"
+        elif 31 <= score <= 45:
+            return "Умеренный уровень!"
+        else:
+            return "Высокий уровень!"
     
     def get_final_result(self, user_id):
-        final_score = 22 # Dummy
-        if (final_score > 22):
-            return "Bad result"
-        else:
-            return "Good result"
+        RT, LT = self.calculate_scores(user_id)
+        return self.interpret_score(RT), self.interpret_score(LT)
+
         

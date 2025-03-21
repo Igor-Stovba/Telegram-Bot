@@ -3,31 +3,45 @@ from telebot.types import ReplyKeyboardMarkup, KeyboardButton
 import requests
 import config
 from quiz import QuizManager
-from yandex_gpt import YandexGPT, YandexGPTConfigManagerForAPIKey
 
 bot = telebot.TeleBot(config.TELEGRAM_BOT_TOKEN)
 quiz_manager = QuizManager()
-
-config_yandex_gpt = {
-    "model_type": "yandex_gpt",
-    "catalog_id": config.YANDEX_CATALOG_ID,
-    "iam_token": config.YANDEX_IAM_TOKEN
-}
-
-config = YandexGPTConfigManagerForAPIKey(model_type=config.YANDEX_MODEL_TYPE, 
-                                         catalog_id=config.YANDEX_CATALOG_ID, 
-                                         api_key=config.YANDEX_IAM_TOKEN)
-yandex_gpt = YandexGPT(config_manager=config)
 
 # # Инициализируем БД
 # init_db()
 
 def get_gpt_response(prompt: str) -> str:
-    messages = [{"role": "user", "text": prompt}]
-    completion = yandex_gpt.get_sync_completion(messages=messages, 
-                                                temperature=0.5,
-                                                max_tokens=150)
-    return completion
+    url = "https://llm.api.cloud.yandex.net/foundationModels/v1/completion"
+    headers = {
+        "Authorization": f"Api-Key {config.YANDEX_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    messages = [
+        {"role": "system", "text": "Ты — эксперт в области психологии. Отвечай только на вопросы, связанные с психологией и моральной поддержкой. Если вопрос выходит за рамки темы, отвечай: 'Я отвечаю только на вопросы по мотивационной и психологической тематике.'"},
+        {"role": "user", "text": prompt}
+    ]
+    data = {
+        "modelUri": config.MODEL_URI,
+        "messages": messages,
+        "temperature": 0.7,
+        "maxTokens": 500,
+        "topP": 1
+    }
+
+    # Отправка запроса к Yandex GPT
+    response = requests.post(url, json=data, headers=headers)
+    if response.status_code == 200:
+        try:
+            result = response.json()
+            if "result" in result and "alternatives" in result["result"]:
+                return result["result"]["alternatives"][0]["message"]["text"]
+            else:
+                return "Не удалось обработать ответ Yandex GPT. Проверьте структуру ответа."
+        except Exception as e:
+            return "Произошла ошибка при обработке ответа от Yandex GPT."
+    else:
+        return "Произошла ошибка при обращении к Yandex GPT 😔"
+    
 
 @bot.message_handler(commands=["start"])
 def start_handler(message):
@@ -50,7 +64,10 @@ def send_next_question(message):
 
         bot.send_message(message.chat.id, question_data["question"], reply_markup=markup)
     else:
-
+        rt, lt = quiz_manager.get_final_result(user_id)
+        bot.send_message(message.chat.id, "Твой результат:")
+        bot.send_message(message.chat.id, f"Реактивная тревожность: {rt}")
+        bot.send_message(message.chat.id, f"Личностная тревожность: {lt}")
         bot.send_message(message.chat.id, "Тест завершен! Спасибо за участие.")
 
 
