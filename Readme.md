@@ -30,10 +30,36 @@ In addition, there is a special test which is aimed to determine the psychologic
    - Replace `your_yandex_gpt_api_key` with your Yandex GPT API key.
 
 ## Usage
-Run the bot with:
+
+Firstly, you should run Prometheus server:
+
 ```sh
-python bot.py
+./prometheus --config.file=prometheus.yml
 ```
+
+Run the bot with (It'll start custom Prometheus exportet + Telegram bot):
+```sh
+python3 bot.py
+```
+
+```csharp
+[Telegram бот + Prometheus клиент]
+         |
+         |  (start_http_server на :8000)
+         V
+http://localhost:8000/metrics
+         ↑
+         |  (scrape по расписанию)
+[Prometheus сервер] <--- prometheus.yml
+         |
+         V
+[Grafana] (вытягивает данные из Prometheus)
+```
+
+After that, the monitoring is available on:
+1) ```http://localhost:9000``` - Web UI prometheus
+2) ```http://localhost:3000``` - Web UI Grafana (prefered)
+
 The bot will start listening for messages and responding with AI-generated replies.
 
 ## Dependencies
