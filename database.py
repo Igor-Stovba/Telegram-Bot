@@ -92,7 +92,6 @@ class ChatManager:
 
     def add_chat(self, chat_id: int):
         """Добавляет chat_id, если он ещё не был добавлен."""
-        print("Add chat id")
         try:
             self.cursor.execute('''
                 INSERT INTO chats (chat_id) VALUES (?)
@@ -104,7 +103,6 @@ class ChatManager:
     def get_all_chat_ids(self) -> List[int]:
         self.cursor.execute('SELECT chat_id FROM chats')
         rows = self.cursor.fetchall()
-        print("ROWS", rows)
         return [row[0] for row in rows]
     
     def close(self):
